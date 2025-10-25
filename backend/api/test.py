@@ -1,43 +1,75 @@
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from typing import List
+from pydantic import BaseModel, EmailStr
+from typing import List, Optional
+import uuid
 
-app = FastAPI(title="To-Do API")
+app = FastAPI(title="User Management API")
 
-class TodoItem(BaseModel):
-    id: int
-    title: str
-    completed: bool = False
+class User(BaseModel):
+    id: str
+    username: str
+    email: EmailStr
+    age: Optional[int] = None
+    is_active: bool = True
 
-todos = []
-current_id = 1
+class CreateUserRequest(BaseModel):
+    username: str
+    email: EmailStr
+    age: Optional[int] = None
+
+users_db = {}
 
 @app.get("/")
 def read_root():
-    return {"message": "To-Do API is running!"}
+    return {"message": "User Management API"}
 
-@app.get("/todos", response_model=List[TodoItem])
-def get_todos():
-    return todos
+@app.post("/users", response_model=User)
+def create_user(user_data: CreateUserRequest):
+    user_id = str(uuid.uuid4())
+    user = User(
+        id=user_id,
+        username=user_data.username,
+        email=user_data.email,
+        age=user_data.age
+    )
+    users_db[user_id] = user
+    return user
 
-@app.post("/todos", response_model=TodoItem)
-def create_todo(todo: TodoItem):
-    global current_id
-    todo.id = current_id
-    current_id += 1
-    todos.append(todo)
-    return todo
+@app.get("/users", response_model=List[User])
+def get_users(active_only: bool = False):
+    if active_only:
+        return [user for user in users_db.values() if user.is_active]
+    return list(users_db.values())
 
-@app.put("/todos/{todo_id}", response_model=TodoItem)
-def update_todo(todo_id: int, todo_update: TodoItem):
-    for i, todo in enumerate(todos):
-        if todo.id == todo_id:
-            todos[i] = todo_update
-            return todo_update
-    raise HTTPException(status_code=404, detail="Todo not found")
+@app.get("/users/{user_id}", response_model=User)
+def get_user(user_id: str):
+    if user_id not in users_db:
+        raise HTTPException(status_code=404, detail="User not found")
+    return users_db[user_id]
 
-@app.delete("/todos/{todo_id}")
-def delete_todo(todo_id: int):
-    global todos
-    todos = [todo for todo in todos if todo.id != todo_id]
-    return {"message": "Todo deleted"}
+@app.put("/users/{user_id}", response_model=User)
+def update_user(user_id: str, user_update: CreateUserRequest):
+    if user_id not in users_db:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    user = users_db[user_id]
+    user.username = user_update.username
+    user.email = user_update.email
+    user.age = user_update.age
+    return user
+
+@app.delete("/users/{user_id}")
+def delete_user(user_id: str):
+    if user_id not in users_db:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    del users_db[user_id]
+    return {"message": "User deleted successfully"}
+
+@app.patch("/users/{user_id}/deactivate")
+def deactivate_user(user_id: str):
+    if user_id not in users_db:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    users_db[user_id].is_active = False
+    return {"message": "User deactivated"}
